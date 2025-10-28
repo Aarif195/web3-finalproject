@@ -1,28 +1,184 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>SendETH DApp</title>
-    <link rel="stylesheet" href="src/index.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <head>
+    <meta charset="UTF-8" />
+    <title>SendETH DApp</title>
+    <!-- Keeping your original CSS link -->
+    <link rel="stylesheet" href="src/index.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  </head>
+  <body>
+  <div class="container">
+    <h1>SendETH DApp</h1>
+    <button id="connectButton">Connect Wallet</button>
 
-  </head>
-  <body>
-  <div class="container">
-    <h1>SendETH DApp</h1>
-    <button id="connectButton">Connect Wallet</button>
+    <p id="accountDisplay">Status: Initializing...</p>
 
-    <p id="accountDisplay"></p>
+    <h2>Send ETH</h2>
+    <input type="text" id="recipient" placeholder="Recipient Address" />
+    <input type="text" id="amount" placeholder="Amount in ETH" />
+    <button id="sendButton" disabled>Send ETH</button>
+    <p id="txStatus"></p>
+  </div>
 
-    <h2>Send ETH</h2>
-    <input type="text" id="recipient" placeholder="Recipient Address" />
-    <input type="text" id="amount" placeholder="Amount in ETH" />
-    <button id="sendButton">Send ETH</button>
-    <p id="txStatus"></p>
-  </div>
+  <script>
+        // --- Core Variables ---
+        let ethereum = window.ethereum;
+        let currentAccount = null;
 
-  <script type="module" src="/main.js"></script>
+        const connectButton = document.getElementById('connectButton');
+        const accountDisplay = document.getElementById('accountDisplay');
+        const sendButton = document.getElementById('sendButton');
+        const recipientInput = document.getElementById('recipient');
+        const amountInput = document.getElementById('amount');
+        const txStatus = document.getElementById('txStatus');
+        
+     
+        async function getBalance(account) {
+            if (!ethereum) return null;
+            try {
+                // Fetch balance in Wei
+                const balanceWei = await ethereum.request({
+                    method: 'eth_getBalance',
+                    params: [account, 'latest']
+                });
+                
+        
+                const balanceEth = parseInt(balanceWei, 16) / Math.pow(10, 18);
+                return balanceEth.toFixed(4); // Format to 4 decimal places
+            } catch (error) {
+                console.error("Error getting balance:", error);
+                return '0.0000'; 
+            }
+        }
+
+    
+        async function sendETH(recipient, amount) {
+            if (!ethereum) return null;
+
+            try {
+              
+                const valueWei = (parseFloat(amount) * Math.pow(10, 18)).toString(16);
+
+                const txHash = await ethereum.request({
+                    method: 'eth_sendTransaction',
+                    params: [{
+                        from: currentAccount,
+                        to: recipient,
+                        value: '0x' + valueWei, // Value must be in hex Wei
+                    }],
+                });
+                
+          
+                return { hash: txHash }; 
+            } catch (error) {
+                console.error("Transaction failed:", error);
+                // Clear the status or show error on rejection
+                txStatus.textContent = error.message.includes('User rejected') ? 
+                                       "Transaction rejected by user." : 
+                                       "Transaction failed.";
+                return null;
+            }
+        }
+
+        // --- Connection Handlers ---
+
+        function updateUI(account) {
+            if (account) {
+                currentAccount = account;
+                connectButton.textContent = "Connected";
+                connectButton.disabled = true;
+                sendButton.disabled = false;
+                
+                // Get and display balance
+                getBalance(account).then(balance => {
+                    accountDisplay.textContent = `Connected account: ${account} | Balance: ${balance} ETH`;
+                });
+            } else {
+                currentAccount = null;
+                connectButton.textContent = "Connect Wallet";
+                connectButton.disabled = false;
+                sendButton.disabled = true;
+                accountDisplay.textContent = 'Wallet not connected.';
+            }
+        }
+        
+        // This is a passive check and handles wallet changes
+        function handleAccountsChanged(accounts) {
+            if (accounts.length > 0) {
+                updateUI(accounts[0]);
+            } else {
+                updateUI(null); // Disconnected
+            }
+        }
+
+        // --- 1. Wallet Setup on Page Load (Passive) ---
+
+        if (typeof ethereum !== 'undefined') {
+            // Set up event listeners for real-time wallet changes
+            ethereum.on('accountsChanged', handleAccountsChanged);
+            
+        
+            ethereum.request({ method: 'eth_accounts' }).then(handleAccountsChanged);
+            
+            connectButton.onclick = connectWallet;
+        } else {
+            accountDisplay.textContent = 'Status: MetaMask not detected.';
+            connectButton.disabled = true;
+        }
+
+    
+        async function connectWallet() {
+            if (!ethereum) return;
+            
+            connectButton.disabled = true;
+            connectButton.textContent = "Connecting...";
+            accountDisplay.textContent = "Status: Awaiting wallet permission...";
+
+            try {
+              
+                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+                handleAccountsChanged(accounts); // Update UI on success
+
+            } catch (error) {
+                if (error.code === 4001) {
+                    accountDisplay.textContent = 'Wallet not connected (User rejected).';
+                } else {
+                    accountDisplay.textContent = `Error: ${error.message}`;
+                }
+                updateUI(null); 
+            }
+        }
+        
+        // --- 3. Send Button Logic ---
+
+        sendButton.addEventListener('click', async () => {
+            if (!currentAccount) {
+                txStatus.textContent = "Please connect your wallet first.";
+                return;
+            }
+
+            const recipient = recipientInput.value.trim();
+            const amount = amountInput.value.trim();
+
+            if (!recipient || !amount) {
+                txStatus.textContent = "Please enter recipient and amount.";
+                return;
+            }
+
+            txStatus.textContent = "Sending transaction...";
+
+            const tx = await sendETH(recipient, amount);
+            if (tx && tx.hash) {
+                txStatus.textContent = `Transaction sent! Hash: ${tx.hash}`;
+            } else {
+                // If tx is null or has no hash, the error handler inside sendETH already updated txStatus
+                if (!txStatus.textContent.includes("Transaction")) {
+                    txStatus.textContent = "Transaction failed.";
+                }
+            }
+        });
+
+    </script>
 </body>
-
 </html>
-
